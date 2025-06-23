@@ -1,0 +1,10 @@
+// api/routes/lineWebhookRoutes.js
+const express = require('express');
+const { handleWebhook } = require('../../controllers/lineController.js');
+
+const router = express.Router();
+
+// This is the endpoint that you will register in the LINE Developers console
+router.post('/webhook', handleWebhook);
+
+module.exports = router;
