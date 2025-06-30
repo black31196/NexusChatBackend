@@ -3,28 +3,20 @@ const mongoose = require('mongoose');
 
 // 1. Define the Schema for your messages
 const messageSchema = new mongoose.Schema({
-  from_user: {
-    type: String,
-    required: true,
-    index: true // Add index for faster queries on this field
-  },
-  to_user: {
-    type: String,
-    required: true,
-    index: true // Add index for faster queries on this field
-  },
-  content: {
-    type: String,
-    required: true
-  },
-  timestamp: {
-    type: Date,
-    default: Date.now
-  },
-  read_at: {
-    type: Date,
-    default: null
-  }
+  from_user: { type: String, required: true, index: true },
+  to_user: { type: String, required: true, index: true },
+  message_type: { type: String, required: true, enum: ['text', 'image', 'sticker'] },
+
+  // Common fields
+  read_at: { type: Date, default: null },
+  timestamp: { type: Date, default: Date.now },
+  client_id: { type: String, unique: true, sparse: true },
+
+  // Optional fields
+  content: { type: String }, // NOTE: Not required, as it's only for text messages
+  file_id: { type: String },
+  package_id: { type: String },
+  sticker_id: { type: String },
 });
 
 // 2. Create a Mongoose Model from the Schema
@@ -36,16 +28,8 @@ const Message = mongoose.model('Message', messageSchema);
 /**
  * Persist a new chat message.
  */
-async function saveMessage({ from_user, to_user, content, timestamp }) {
-  // Create a new instance of the Message model
-  const newMessage = new Message({
-    from_user,
-    to_user,
-    content,
-    timestamp: timestamp || new Date(), // Ensure timestamp is set
-    read_at: null
-  });
-  // .save() persists the document and returns it
+async function saveMessage(messageData) {
+  const newMessage = new Message(messageData);
   return await newMessage.save();
 }
 
@@ -53,7 +37,6 @@ async function saveMessage({ from_user, to_user, content, timestamp }) {
  * Fetch the two-way history between `from` and `to`, sorted oldest→newest.
  */
 async function getHistory({ from_user, to_user, limit = 50 }) {
-  // Use the Message model to find documents. .toArray() is not needed.
   return Message.find({
     $or: [
       { from_user: from_user, to_user: to_user },

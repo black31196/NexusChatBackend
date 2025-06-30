@@ -1,6 +1,9 @@
 // src/server.js
 const path         = require('path');
+require('dotenv').config({path: path.resolve(__dirname, '.env.postgres')});
 require('dotenv').config({ path: path.resolve(__dirname, '.env.express') });
+require('dotenv').config({ path: path.resolve(__dirname, '.env.mongodb') });
+require('dotenv').config({ path: path.resolve(__dirname, '.env.lineOA') });
 
 const http              = require('http');
 const app               = require('./app');

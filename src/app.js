@@ -13,11 +13,12 @@ const lineController= require('./controllers/lineController.js');
 const { verifyLineSignature } = require('./middlewares/lineMiddleware');
 const { errorHandler } = require('./middlewares/errorHandler');
 
+{/*
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config({path: path.resolve(__dirname, './.env.lineOA')});
-  require('dotenv').config({path: path.resolve(__dirname, './.env.express') });
 }
-
+*/
+}
 //const lineWebhookRoutes = require('./api/routes/lineWebhookRoutes.js');
 
 const app = express();
@@ -26,7 +27,23 @@ const app = express();
 app.set('trust proxy', 1);
 
 // ─── Security/CORS/Rate-Limit ────────────────────────────────────────────────
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        "img-src": ["'self'", "http://localhost:5000"],
+      },
+    },
+    
+    // --- THIS IS THE FINAL FIX ---
+    // This changes the header from 'same-origin' to 'cross-origin',
+    // which is required to allow your frontend on port 3000 to
+    // display images served from your backend on port 5000.
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+
+  })
+);
 app.use(cors({ origin: process.env.ALLOWED_ORIGINS.split(','), credentials: true }));
 app.use(rateLimit({ windowMs: 60_000, max: 200, standardHeaders: true, legacyHeaders: false }));
 

@@ -16,6 +16,12 @@ router.post(
   chatController.postMessage
 );
 
+// Route to get an image by its ID
+router.get('/image/:fileId', chatController.getImage);
+
+// Route to upload an image and send it
+router.post('/upload/image', auth, chatController.uploadImageMessage);
+
 router.post(
   '/:conversationId/read',
   auth,

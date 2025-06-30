@@ -1,14 +1,18 @@
 // src/db/mongo.js
 const mongoose = require('mongoose');
 const path = require('path');
-require('dotenv').config({
-  path: path.resolve(__dirname, '../.env.mongodb')
-});
+
 
 // Build the connection string
 const mongoUri = process.env.MONGO_URI;
 const dbName = process.env.MONGO_DB_NAME;
+
+console.log(`[Mongo Connection] Attempting to connect to database: "${dbName}"`);
+
 const connectionString = `${mongoUri}/${dbName}`;
+
+
+let gfs;
 
 // Mongoose connection logic
 const connectToMongo = async () => {
@@ -26,6 +30,9 @@ const connectToMongo = async () => {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
+    gfs = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
+      bucketName: 'uploads'
+    });
     console.log('✔️  MongoDB connected successfully.');
   } catch (error) {
     console.error('❌  MongoDB connection error:', error);
@@ -39,4 +46,11 @@ const closeMongo = async () => {
   console.log('🔌 MongoDB connection closed.');
 };
 
-module.exports = { connectToMongo, closeMongo };
+const getGfs = () => {
+    if (!gfs) {
+        throw new Error("GridFS not initialized. Call connectToMongo first.");
+    }
+    return gfs;
+}
+
+module.exports = { connectToMongo, closeMongo, getGfs };
