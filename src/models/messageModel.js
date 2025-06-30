@@ -15,14 +15,14 @@ async function saveMessage({ from_user, to_user, content, timestamp }) {
 /**
  * Fetch the two-way history between `from` and `to`, sorted oldest→newest.
  */
-async function getHistory({ from, to, limit = 50 }) {
+async function getHistory({ from_user, to_user, limit = 50 }) {
   const db = await connectToMongo();
   return db
     .collection('messages')
     .find({
       $or: [
-        { from_user: from, to_user: to },
-        { from_user: to,   to_user: from }
+        { from_user:from_user, to_user:to_user},
+        { from_user: to_user, to_user: from_user }
       ]
     })
     .sort({ timestamp: 1 })

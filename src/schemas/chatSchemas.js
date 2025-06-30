@@ -7,11 +7,11 @@ const idSchema = Joi.alternatives().try(
 );
 
 exports.sendMessageSchema = Joi.object({
-  to:      idSchema.required(),
+  to_user:      idSchema.required(),
   content: Joi.string().min(1).required(),
 });
 
 exports.historyQuerySchema = Joi.object({
-  to:    Joi.string().uuid().required(),
+  to_user:    Joi.string().uuid().required(),
   limit: Joi.number().integer().min(1).max(100).optional(),
 });

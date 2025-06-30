@@ -15,8 +15,8 @@ module.exports = function registerChatEvents(socket, io) {
     try {
       // Persist to your DB
       const saved = await chatService.sendMessage({
-        from:    msg.from,
-        to:      msg.to,
+        from_user:    msg.from_user,
+        to_user:      msg.to_user,
         content: msg.content
       });
       // 2a) ACK back to sender so they can mark “sent”
@@ -25,14 +25,14 @@ module.exports = function registerChatEvents(socket, io) {
       // 2b) Broadcast to the recipient’s room
       const outgoing = {
         id:             saved._id.toString(),
-        conversationId: msg.to,           // or saved.conversationId
-        from:           saved.from_user,
-        to:             saved.to_user,
+        conversationId: msg.to_user,           // or saved.conversationId
+        from_user:           saved.from_user,
+        to_user:             saved.to_user,
         content:        saved.content,
         timestamp:      saved.timestamp,
         status:         'delivered'
       };
-      console.log('[Socket.IO] emitting receive_message to', msg.to, outgoing);
+      console.log('[Socket.IO] emitting receive_message to', msg.to_user, outgoing);
       io.to(msg.to).emit('receive_message', outgoing);
 
     } catch (err) {

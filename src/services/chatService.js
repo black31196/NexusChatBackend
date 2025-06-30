@@ -1,14 +1,14 @@
 const messageModel = require('../models/messageModel');
 const userModel    = require('../models/userModel');
 
-async function sendMessage({ from, to, content }) {
+async function sendMessage({ from_user, to_user, content }) {
   const timestamp = new Date();
-  const saved = await messageModel.saveMessage({ from_user: from, to_user: to, content, timestamp });
+  const saved = await messageModel.saveMessage({ from_user, to_user, content, timestamp });
   return saved;
 }
 
-async function fetchHistory({ from, to, limit }) {
-  return messageModel.getHistory({ from, to, limit });
+async function fetchHistory({ from_user, to_user, limit }) {
+  return messageModel.getHistory({ from_user, to_user, limit });
 }
 
 async function fetchConversations(userId) {
@@ -17,8 +17,8 @@ async function fetchConversations(userId) {
 // new helper for your controller’s getMessages
 async function fetchMessages(conversationId, userId, limit = 500) {
   return messageModel.getHistory({
-    from:  userId,
-    to:    conversationId,
+    from_user:  userId,
+    to_user:    conversationId,
     limit
   });
 }
