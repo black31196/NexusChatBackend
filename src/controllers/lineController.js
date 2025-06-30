@@ -17,8 +17,8 @@ exports.handleWebhook = async (req, res) => {
         const outgoing = {
           id:             saved._id.toString(),
           conversationId: from,            // opens the convo with the LINE user
-          from:           saved.from_user, // LINE user id
-          to:             saved.to_user,   // your agent’s id
+          from_user:           saved.from_user, // LINE user id
+          to_user:             saved.to_user,   // your agent’s id
           content:        saved.content,
           timestamp:      saved.timestamp.toISOString(),
           status:         'delivered'
