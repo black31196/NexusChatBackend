@@ -1,5 +1,19 @@
 // src/controllers/lineController.js
 const chatSvc = require('../services/chatService');
+const line      = require('@line/bot-sdk');
+const path      = require('path');
+
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config({
+    path: path.resolve(__dirname, '../.env.lineOA')
+  });
+}
+const lineConfig = {
+  channelSecret:      process.env.LINE_CHANNEL_SECRET,
+  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN
+};
+const lineClient = new line.Client(lineConfig);
+
 exports.handleWebhook = async (req, res) => {
   const body = req.bodyJson;  // parsed in the previous middleware
   const io   = req.app.get('io');
@@ -48,4 +62,20 @@ exports.handleWebhook = async (req, res) => {
 
   // 200 OK to LINE
   res.sendStatus(200);
+};
+
+const handleImageMessage = async (messageId, userId) => {
+  try {
+    const stream = await client.getMessageContent(messageId);
+    const chunks = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+    const imageBuffer = Buffer.concat(chunks);
+
+    // Now, save this buffer to MongoDB
+    await saveImageToDB(userId, imageBuffer, 'image/jpeg'); // Assuming JPEG, you might need to determine the content type
+  } catch (error) {
+    console.error('Error fetching image from LINE:', error);
+  }
 };

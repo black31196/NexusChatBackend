@@ -42,8 +42,7 @@ exports.postMessage = asyncWrapper(async (req, res) => {
 
    // 4) HTTP response
    res.status(201).json({
-
-    ...message,
+    ...message.toObject(),
     status: 'sent'
    });
  });
@@ -82,4 +81,5 @@ exports.markRead = asyncWrapper(async (req, res) => {
   console.log('[chatController.markRead] done');
   res.sendStatus(204);
 });
+
 
