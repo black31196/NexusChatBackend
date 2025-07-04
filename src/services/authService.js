@@ -2,7 +2,7 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const userModel = require('../models/userModel');
-const { JWT_SECRET, JWT_EXPIRES_IN = '1h' } = process.env;
+const { JWT_SECRET, JWT_EXPIRES_IN = '12h' } = process.env;
 async function register({ username, email, password, role }) {
   if (await userModel.findByUsername(username)) {
     const e = new Error('Username already taken'); e.status = 409; throw e;

@@ -11,23 +11,6 @@ async function fetchHistory({ from_user, to_user, limit }) {
   return messageModel.getHistory({ from_user, to_user, limit });
 }
 
-async function saveImageToDB(imageBuffer, userId, contentType) {
-    const gfs = getGfs();
-    const readablePhotoStream = new Readable();
-    readablePhotoStream.push(imageBuffer);
-    readablePhotoStream.push(null);
-    const filename = `line-image-${userId}-${Date.now()}`;
-    const uploadStream = gfs.openUploadStream(filename, {
-        contentType: contentType,
-        metadata: { userId: userId },
-    });
-    readablePhotoStream.pipe(uploadStream);
-    return new Promise((resolve, reject) => {
-        uploadStream.on('finish', resolve);
-        uploadStream.on('error', reject);
-    });
-}
-
 async function fetchConversations(userId) {
   return messageModel.getConversations(userId);
 }

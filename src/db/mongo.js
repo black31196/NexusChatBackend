@@ -1,56 +1,44 @@
 // src/db/mongo.js
 const mongoose = require('mongoose');
-const path = require('path');
-
-
-// Build the connection string
-const mongoUri = process.env.MONGO_URI;
-const dbName = process.env.MONGO_DB_NAME;
-
-console.log(`[Mongo Connection] Attempting to connect to database: "${dbName}"`);
-
-const connectionString = `${mongoUri}/${dbName}`;
-
 
 let gfs;
 
-// Mongoose connection logic
-const connectToMongo = async () => {
-  // Check if we have a connection to the database
-  if (mongoose.connection.readyState >= 1) {
-    console.log('✔️  MongoDB connection already established.');
-    return;
-  }
+// Check for the required environment variables immediately.
+if (!process.env.MONGO_URI || !process.env.MONGO_DB_NAME) {
+  throw new Error("FATAL ERROR: MONGO_URI or MONGO_DB_NAME not loaded. Check config/dotenv.js");
+}
+const connectionString = `${process.env.MONGO_URI}/${process.env.MONGO_DB_NAME}`;
 
-  try {
-    // Mongoose's connect method returns a promise
-    await mongoose.connect(connectionString, {
-      // These options are now defaults in recent Mongoose versions,
-      // but are good to be aware of.
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    gfs = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
-      bucketName: 'uploads'
-    });
-    console.log('✔️  MongoDB connected successfully.');
-  } catch (error) {
+// Create the connection promise ONE time and export it.
+const connPromise = mongoose.connect(connectionString, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(mongooseInstance => {
+    console.log(`✔️  MongoDB connected to database: "${mongooseInstance.connection.name}"`);
+    const db = mongooseInstance.connection.db;
+    gfs = new mongoose.mongo.GridFSBucket(db, { bucketName: 'uploads' });
+    console.log('✔️  GridFS initialized.');
+    // The promise resolves with the native Db object, which GridFsStorage needs
+    return db;
+  })
+  .catch(error => {
     console.error('❌  MongoDB connection error:', error);
-    // Exit process with failure
     process.exit(1);
-  }
-};
+  });
 
-const closeMongo = async () => {
-  await mongoose.connection.close();
-  console.log('🔌 MongoDB connection closed.');
+// This function now just makes the main app wait for the connection to finish.
+const connectToMongo = async () => {
+  await connPromise;
 };
 
 const getGfs = () => {
-    if (!gfs) {
-        throw new Error("GridFS not initialized. Call connectToMongo first.");
-    }
-    return gfs;
-}
+  if (!gfs) throw new Error("GridFS not available. Check DB connection.");
+  return gfs;
+};
 
-module.exports = { connectToMongo, closeMongo, getGfs };
+module.exports = {
+  connectToMongo,
+  getGfs,
+  connPromise, // Export the promise for the middleware
+};

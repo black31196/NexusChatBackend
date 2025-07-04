@@ -1,79 +1,48 @@
 // src/controllers/chatController.js
+const { Readable } = require('stream'); // Import Node.js stream utility
 const { asyncWrapper } = require('../middlewares/errorHandler');
 const chatService = require('../services/chatService');
-const { Message } = require('../models/messageModel');
 const { getGfs } = require('../db/mongo');
 const mongoose = require('mongoose');
-const line      = require('@line/bot-sdk');
-const path      = require('path');
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config({
-    path: path.resolve(__dirname, '../.env.lineOA')
-  });
-  require('dotenv').config({
-    dbpath: path.resolve(__dirname, '../.env.mongodb')
-  });
-}
+const line = require('@line/bot-sdk');
 
-// --- multer and lineClient config ---
-const multer = require('multer');
-const { GridFsStorage } = require('multer-gridfs-storage');
-const { url } = require('inspector');
-
-const storage = new GridFsStorage({
-  url: `${process.env.MONGO_URI}/${process.env.MONGO_DB_NAME}`,
-  file: (req, file) => {
-    return {
-      bucketName: 'uploads',
-      filename: `user-upload-${Date.now()}-${file.originalname}`
-    };
-  }
-});
-const upload = multer({ storage });
 
 const lineConfig = {
-  channelSecret:      process.env.LINE_CHANNEL_SECRET,
+  channelSecret: process.env.LINE_CHANNEL_SECRET,
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN
 };
 const lineClient = new line.Client(lineConfig);
 
+// --- TEXT MESSAGE CONTROLLER ---
 exports.postMessage = asyncWrapper(async (req, res) => {
-  const from_user = req.user.id;                             
+  const from_user = req.user.id;
   const { to_user, content, client_id } = req.body;
- 
+
   const message = await chatService.saveMessage({
     from_user,
     to_user,
     content,
-    client_id, // Pass the idempotency key if you have it
-    message_type: 'text', // <-- ADD THIS REQUIRED FIELD
-  }); 
+    client_id,
+    message_type: 'text',
+  });
+
   if (to_user.startsWith('U')) {
     try {
-      await lineClient.pushMessage(to_user, { type:'text', text: content });
-      console.log('✅ Pushed to LINE user', to_user);
+      await lineClient.pushMessage(to_user, { type: 'text', text: content });
+      console.log('✅ Pushed text to LINE user', to_user);
     } catch (err) {
       console.error('❌ LINE pushMessage failed:', err);
     }
   }
-  // 3) WebSocket broadcast
-   const io = req.app.get('io');
-   io.to(to_user).emit('receive_message', {
-    id:             message._id.toString(),
-    conversationId: message.to_user,
-    from_user:           message.from_user,
-    to_user:             message.to_user,
-    content:        message.content,
-    timestamp:      message.timestamp,
-    status:         'delivered'
-   });
 
-   // 4) HTTP response
-   res.status(201).json({
-    ...message.toObject(),
-    status: 'sent'
-   });
- });
+  // WebSocket broadcast
+  const io = req.app.get('io');
+  const outgoing = { /* ... create the outgoing message object ... */ };
+  io.to(from_user).emit('receive_message', outgoing); // Also emit to self for sync
+  io.to(to_user).emit('receive_message', outgoing);
+
+  res.status(201).json(message.toObject());
+});
 
 exports.getHistory = asyncWrapper(async (req, res) => {
   const from_user = req.user.id;                             
@@ -111,64 +80,129 @@ exports.markRead = asyncWrapper(async (req, res) => {
 });
 
 // ROUTE: GET /api/v1/chat/image/:fileId
-exports.getImage = asyncWrapper(async (req, res) => {
-  const gfs = getGfs();
-  const fileId = new mongoose.Types.ObjectId(req.params.fileId);
-  
-  const files = await gfs.find({ _id: fileId }).toArray();
-  if (!files || files.length === 0) {
-    return res.status(404).json({ error: 'File not found' });
+exports.getImage = async (req, res) => {
+  try {
+    const gfs = getGfs();
+    const fileId = new mongoose.Types.ObjectId(req.params.fileId);
+    const file = (await gfs.find({ _id: fileId }).toArray())[0];
+
+    if (!file) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+
+    res.set('Content-Type', file.contentType);
+    const downloadStream = gfs.openDownloadStream(fileId);
+    downloadStream.pipe(res);
+  } catch (err) {
+    res.status(404).json({ error: 'Image not found' });
+  }
+};
+
+exports.uploadImageMessage = asyncWrapper(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No image file provided.' });
   }
 
-  const file = files[0];
-  res.set('Content-Type', file.contentType);
+  const { buffer, originalname, mimetype } = req.file;
+  const { to_user } = req.body;
+  const from_user = process.env.DEFAULT_AGENT_ID
+  const gfs = getGfs();
+  // 1. Open an upload stream to GridFS and give it a filename
+  const uploadStream = gfs.openUploadStream(originalname, {
+    contentType: mimetype,
+    metadata: { from_user, to_user }
+  });
 
-  const downloadStream = gfs.openDownloadStream(fileId);
-  downloadStream.pipe(res);
-});
-// NEW ENDPOINT 2: Uploads an image, saves it, and sends to LINE
-// ROUTE: POST /api/v1/chat/upload/image
-// This uses multer as middleware, which is why 'upload.single' is here.
-exports.uploadImageMessage = [
-  upload.single('image'), // 'image' must be the field name in the FormData
-  asyncWrapper(async (req, res) => {
-    // 1. Get data from request
-    if (!req.file) {
-      return res.status(400).json({ error: 'No image file uploaded.' });
+  const fileId = uploadStream.id.toString();
+  // 2. Create a readable stream from the file buffer in memory
+  const readableStream = new Readable();
+  readableStream.push(buffer);
+  readableStream.push(null); // Signal that we're done pushing data
+  readableStream.pipe(uploadStream);
+
+  // 4. Handle errors during the upload
+  uploadStream.on('error', (err) => {
+    console.error('Error uploading to GridFS:', err);
+    res.status(500).json({ error: 'Failed to upload file.' });
+  });
+
+  // 5. When the upload is finished, save the message and notify LINE
+   uploadStream.on('finish', async () => {
+    console.log(`✅ GridFS upload finished for fileId: ${fileId}`);
+    try {
+      // 5. Save the message record to your database
+      const savedMessage = await chatService.saveMessage({
+        from_user,
+        to_user,
+        message_type: 'image',
+        file_id: fileId,
+      });
+
+      const imageUrl = `${process.env.BACKEND_URL}/api/v1/chat/image/${fileId}`;
+      if (to_user && to_user.startsWith('U')) {
+        console.log("imageUrl:", imageUrl);
+        console.log ("backendurl:", process.env.BACKEND_URL);
+        await lineClient.pushMessage(to_user, {
+          type: 'image',
+          originalContentUrl: imageUrl,
+          previewImageUrl: imageUrl,
+        });
+      }
+      
+      console.log('✅ Successfully processed and saved image.');
+      // Respond to the frontend
+      res.status(201).json(savedMessage.toObject());
+    } catch(err) {
+      console.error('Error saving message after file upload:', err);
+      res.status(500).json({ error: 'Server error after successful upload.' });
     }
-    const { to_user } = req.body; // The LINE user ID to send to
-    const from_user = req.user.id; // The agent's ID
-    const fileId = req.file.id.toString();
+  });
+});
 
-    // 2. Construct the public URL for the image
-    const imageUrl = `${process.env.BACKEND_URL}/api/v1/chat/image/${fileId}`;
+/*
+exports.uploadImageMessage = async (req, res) => {
 
-    // 3. Send the image message to LINE
+  console.log('--- [DEBUG] Inside uploadImageMessage ---');
+  console.log('req.body:', req.body);
+  console.log('req.file:', req.file);
+  console.log('req.files:', req.files);
+  console.log('req.user:', req.user);
+  console.log('req.file._id:', req.file._id);
+  console.log('req.file.filename:', req.file.filename);
+  if (!req.file) {
+    return res.status(400).json({ error: 'No image file uploaded.' });
+  }
+  
+
+  const { to_user } = req.body;
+  const from_user = req.user.id;
+  const fileId = req.file._id.toString();
+
+  // 1. Save message record to your database
+  const savedMessage = await chatService.saveMessage({
+    from_user,
+    to_user,
+    message_type: 'image',
+    file_id: fileId,
+  });
+
+  // 2. Create the public URL for the image
+  const imageUrl = `${process.env.BACKEND_URL}/api/v1/chat/image/${fileId}`;
+
+  // 3. Send the image to the LINE user
+  if (to_user.startsWith('U')) {
     try {
       await lineClient.pushMessage(to_user, {
         type: 'image',
         originalContentUrl: imageUrl,
         previewImageUrl: imageUrl,
       });
-      console.log('✅ Pushed image to LINE user', to_user);
     } catch (err) {
-      console.error('❌ LINE pushMessage for image failed:', err.originalError.response.data);
-      // Even if LINE fails, we still save it to our history.
+      console.error('❌ LINE pushMessage for image failed:', err);
     }
-    // 4. Save a record of the image message to our own database
-    const messageData = {
-      from_user,
-      to_user,
-      message_type: 'image',
-      file_id: fileId,
-    };
-    const savedMessage = await chatService.saveMessage(messageData); // Assuming you have this service function
-
-    // 5. Send success response to the frontend
-    res.status(201).json({
-      message: 'Image sent successfully',
-      ...savedMessage.toObject()
-    });
-  })
-];
-
+  }
+  
+  // 4. Respond to your frontend
+  res.status(201).json(savedMessage.toObject());
+};
+*/
